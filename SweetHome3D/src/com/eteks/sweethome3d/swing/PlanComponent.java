@@ -2008,6 +2008,103 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
    * that makes it fill <code>pageFormat</code> imageable size if this attribute is <code>null</code>.
    */
   public int print(Graphics g, PageFormat pageFormat, int pageIndex) {
+    Level selectedLevel = this.home.getSelectedLevel();
+    try {
+      if (this.home.getLevels().isEmpty()) {
+        return printSelectedLevel(g, pageFormat, pageIndex);
+      }
+
+      // Keep room at the top of each plan page for the name of its level
+      Font levelNameFont = (getFont() != null ? getFont() : g.getFont()).deriveFont(Font.PLAIN, 11f);
+      FontMetrics levelNameMetrics = g.getFontMetrics(levelNameFont);
+      final float levelNameHeight = levelNameMetrics.getAscent() + levelNameMetrics.getDescent() + 5;
+      final PageFormat planPageFormat = new PageFormat() {
+          @Override
+          public double getImageableY() {
+            return super.getImageableY() + levelNameHeight;
+          }
+
+          @Override
+          public double getImageableHeight() {
+            return Math.max(0, super.getImageableHeight() - levelNameHeight);
+          }
+        };
+      planPageFormat.setOrientation(pageFormat.getOrientation());
+      planPageFormat.setPaper(pageFormat.getPaper());
+
+      int levelPageIndex = pageIndex;
+      for (Level level : this.home.getLevels()) {
+        if (level.isViewable()) {
+          this.home.setSelectedLevel(level);
+          int levelPageCount = getSelectedLevelPageCount(g, planPageFormat);
+          if (levelPageCount == 0) {
+            levelPageCount = 1;
+            if (levelPageIndex == 0) {
+              printLevelName(g, pageFormat, level, levelNameFont);
+              return PAGE_EXISTS;
+            }
+          }
+          if (levelPageIndex < levelPageCount) {
+            int pageExists = printSelectedLevel(g, planPageFormat, levelPageIndex);
+            if (pageExists == PAGE_EXISTS) {
+              printLevelName(g, pageFormat, level, levelNameFont);
+            }
+            return pageExists;
+          }
+          levelPageIndex -= levelPageCount;
+        }
+      }
+      return NO_SUCH_PAGE;
+    } finally {
+      this.home.setSelectedLevel(selectedLevel);
+    }
+  }
+
+  /**
+   * Draws the name of the given <code>level</code> centered at the top of the page imageable area.
+   */
+  private void printLevelName(Graphics g, PageFormat pageFormat, Level level, Font font) {
+    String levelName = level.getName();
+    if (levelName != null && levelName.length() > 0) {
+      Graphics2D g2D = (Graphics2D)g.create();
+      g2D.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+      g2D.setFont(font);
+      g2D.setColor(Color.BLACK);
+      FontMetrics fontMetrics = g2D.getFontMetrics();
+      float x = (float)(pageFormat.getImageableX()
+          + (pageFormat.getImageableWidth() - fontMetrics.stringWidth(levelName)) / 2);
+      float y = (float)pageFormat.getImageableY() + fontMetrics.getAscent();
+      g2D.drawString(levelName, x, y);
+      g2D.dispose();
+    }
+  }
+
+  private int getSelectedLevelPageCount(Graphics g, PageFormat pageFormat) {
+    List<Selectable> printedItems = getPaintedItems();
+    Rectangle2D printedItemBounds = getItemsBounds(g, printedItems);
+    if (printedItemBounds == null) {
+      return 0;
+    }
+    if (this.home.getPrint() == null || this.home.getPrint().getPlanScale() == null) {
+      return 1;
+    }
+
+    float printScale = this.home.getPrint().getPlanScale().floatValue()
+        * LengthUnit.centimeterToInch(72);
+    int pagesPerRow = (int)(printedItemBounds.getWidth() * printScale
+        / pageFormat.getImageableWidth());
+    if (printedItemBounds.getWidth() * printScale != pageFormat.getImageableWidth()) {
+      pagesPerRow++;
+    }
+    int pagesPerColumn = (int)(printedItemBounds.getHeight() * printScale
+        / pageFormat.getImageableHeight());
+    if (printedItemBounds.getHeight() * printScale != pageFormat.getImageableHeight()) {
+      pagesPerColumn++;
+    }
+    return pagesPerRow * pagesPerColumn;
+  }
+
+  private int printSelectedLevel(Graphics g, PageFormat pageFormat, int pageIndex) {
     List<Selectable> printedItems = getPaintedItems(); 
     Rectangle2D printedItemBounds = getItemsBounds(g, printedItems);
     if (printedItemBounds != null) {
